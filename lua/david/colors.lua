@@ -33,5 +33,3 @@ vim.api.nvim_set_hl(ns_de, "LuaFunctionCall", {
 })
 
 vim.api.nvim_set_hl_ns(ns_de)
-
-
