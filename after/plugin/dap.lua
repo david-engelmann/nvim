@@ -332,36 +332,84 @@ dap.configurations.go = {
   },
 }
 
+dap.adapters.python = {
+  type = "executable",
+  command = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+  args = { "-m", "debugpy.adapter" },
+}
+
 dap.configurations.python = {
   {
     type = "python",
     request = "launch",
-    name = "Build api",
-    program = "${file}",
-    args = { "--target", "api" },
+    name = "pytest: current file",
+    args = {
+    "${file}"
+    },
+    --program = "$(file)",
     console = "integratedTerminal",
+    module = "pytest",
+    --cwd = vim.fn.getcwd(),
+    pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+--      if vim.fn.executable("/usr/bin/python3") == 1 then
+--        return "/usr/bin/python3"
+--      elseif vim.fn.executable("/opt/venv/bin/python") == 1 then
+--        return "/opt/venv/bin/python"
+--      elseif vim.fn.executable("/opt/venv/bin/python3") == 1 then
+--        return "/opt/venv/bin/python3"
+--      elseif vim.fn.executable("/opt/venv/bin/python3.8") == 1 then
+--        return "/opt/venv/bin/python3.8"
+--      elseif vim.fn.executable("/opt/venv/bin/python3.9") == 1 then
+--        return "/opt/venv/bin/python3.9"
+--      elseif vim.fn.executable("/opt/venv/bin/python3.10") == 1 then
+--        return "/opt/venv/bin/python3.10"
+--      else
+--        return "/usr/bin/python3"
+--      end
+    --end,
+
   },
   {
     type = "python",
     request = "launch",
-    name = "lsif",
-    program = "src/lsif/__main__.py",
-    args = {},
+    name = "pytest",
     console = "integratedTerminal",
+    module = "pytest",
+    pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+
   },
+  {
+
+    type = "python",
+    request = "launch",
+    name = "pytest: current folder",
+    args = {
+      vim.fn.getcwd()
+    },
+    --program = "$(file)",
+    console = "integratedTerminal",
+    module = "pytest",
+    --cwd = vim.fn.getcwd(),
+    pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+  }
 }
 
-local dap_python = require "dap-python"
-dap_python.setup("python", {
-  -- So if configured correctly, this will open up new terminal.
-  --    Could probably get this to target a particular terminal
-  --    and/or add a tab to kitty or something like that as well.
-  console = "externalTerminal",
-
-  include_configs = true,
-})
-
-dap_python.test_runner = "pytest"
+--local dap_python = require "dap-python"
+--dap_python.setup("python3", {
+--  -- So if configured correctly, this will open up new terminal.
+--  --    Could probably get this to target a particular terminal
+--  --    and/or add a tab to kitty or something like that as well.
+--  console = "integratedTerminal",
+--
+--  include_configs = true,
+--}
+--)
+--
+--dap_python.resolve_python = function()
+--  return "/usr/bin/python3"
+--end
+--
+--dap_python.test_runner = "pytest"
 
 dap.adapters.lldb = {
   type = "executable",

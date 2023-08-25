@@ -22,6 +22,7 @@ return {
   { dir = "~/plugins/vim9jit" },
   { dir = "~/plugins/sg.nvim" },
   { dir = "~/plugins/sponge-bob.nvim" },
+  { dir = "~/plugins/cody-debug-session.nvim" },
   { "tjdevries/colorbuddy.nvim", dev = false },
   { "tjdevries/ocaml.nvim" },
   { "tjdevries/gruvbuddy.nvim", dev = false },
