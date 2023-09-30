@@ -338,6 +338,17 @@ dap.adapters.python = {
   args = { "-m", "debugpy.adapter" },
 }
 
+dap.adapters.python3 = {
+  type = "server",
+  host = "0.0.0.0",
+  port = 5678,
+--  executable = {
+--  command = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+--  args = { "-m", "debugpy.adapter" },
+--  --cwd = "/workspaces/scraping"
+--  }
+}
+
 dap.configurations.python = {
   {
     type = "python",
@@ -391,6 +402,37 @@ dap.configurations.python = {
     module = "pytest",
     --cwd = vim.fn.getcwd(),
     pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+  },
+  {
+    type = "python3",
+    request = "attach",
+    name = "pytest: docker container - current file",
+    console = "integratedTerminal",
+    module = "pytest",
+    pathMappings = {{
+      localRoot = vim.fn.getcwd(),
+      remoteRoot = "/workspaces/scraping"
+    }},
+    --pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+    args = {
+    --"-m",
+    --"debugpy.adapter",
+    "${file}"
+    },
+    subProcess = false,
+  },
+  {
+    type = "python3",
+    request = "attach",
+    name = "pytest: docker container",
+    console = "integratedTerminal",
+    module = "pytest",
+    pathMappings = {{
+      localRoot = vim.fn.getcwd(),
+      remoteRoot = "/workspaces/scraping"
+    }},
+    --pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+    subProcess = false,
   }
 }
 
@@ -533,6 +575,23 @@ dap.configurations.rust = {
   },
 }
 
+-- OCaml Setup
+
+dap.adapters.ocaml = {
+  type = "executable",
+  command = "/home/david-engelmann/.opam/default/bin/ocamlearlybird",
+  args = { "debug" },
+}
+
+dap.configurations.ocaml = {
+  {
+    name = "ocaml: earlybird",
+    type = "ocaml",
+    request = "launch",
+    --console = "integratedTerminal",
+  }
+}
+
 local map = function(lhs, rhs, desc)
   if desc then
     desc = "[DAP] " .. desc
@@ -648,6 +707,7 @@ local debug_unmap = function()
       v.sid = nil
       v.lnum = nil
 
+      print("rhs:", rhs)
       vim.keymap.set("n", k, rhs, v)
     end
   end
@@ -656,7 +716,7 @@ local debug_unmap = function()
 end
 
 dap.listeners.after.event_initialized["dapui_config"] = function()
-  debug_map("asdf", ":echo 'hello world<CR>", "showing things")
+  --debug_map("asdf", ":echo 'hello world<CR>", "showing things")
 
   dap_ui.open()
 end
