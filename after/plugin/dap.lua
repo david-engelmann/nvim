@@ -37,7 +37,7 @@ require("nvim-dap-virtual-text").setup {
 
   -- experimental features:
   virt_text_pos = "eol", -- position of virtual text, see `:h nvim_buf_set_extmark()`
-  all_frames = false, -- show virtual text for all stack frames not only current. Only works for debugpy on my machine.
+  all_frames = false,    -- show virtual text for all stack frames not only current. Only works for debugpy on my machine.
 }
 
 -- TODO: How does terminal work?
@@ -342,11 +342,11 @@ dap.adapters.python3 = {
   type = "server",
   host = "0.0.0.0",
   port = 5678,
---  executable = {
---  command = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
---  args = { "-m", "debugpy.adapter" },
---  --cwd = "/workspaces/scraping"
---  }
+  --  executable = {
+  --  command = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
+  --  args = { "-m", "debugpy.adapter" },
+  --  --cwd = "/workspaces/scraping"
+  --  }
 }
 
 dap.configurations.python = {
@@ -355,28 +355,28 @@ dap.configurations.python = {
     request = "launch",
     name = "pytest: current file",
     args = {
-    "${file}"
+      "${file}"
     },
     --program = "$(file)",
     console = "integratedTerminal",
     module = "pytest",
     --cwd = vim.fn.getcwd(),
     pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
---      if vim.fn.executable("/usr/bin/python3") == 1 then
---        return "/usr/bin/python3"
---      elseif vim.fn.executable("/opt/venv/bin/python") == 1 then
---        return "/opt/venv/bin/python"
---      elseif vim.fn.executable("/opt/venv/bin/python3") == 1 then
---        return "/opt/venv/bin/python3"
---      elseif vim.fn.executable("/opt/venv/bin/python3.8") == 1 then
---        return "/opt/venv/bin/python3.8"
---      elseif vim.fn.executable("/opt/venv/bin/python3.9") == 1 then
---        return "/opt/venv/bin/python3.9"
---      elseif vim.fn.executable("/opt/venv/bin/python3.10") == 1 then
---        return "/opt/venv/bin/python3.10"
---      else
---        return "/usr/bin/python3"
---      end
+    --      if vim.fn.executable("/usr/bin/python3") == 1 then
+    --        return "/usr/bin/python3"
+    --      elseif vim.fn.executable("/opt/venv/bin/python") == 1 then
+    --        return "/opt/venv/bin/python"
+    --      elseif vim.fn.executable("/opt/venv/bin/python3") == 1 then
+    --        return "/opt/venv/bin/python3"
+    --      elseif vim.fn.executable("/opt/venv/bin/python3.8") == 1 then
+    --        return "/opt/venv/bin/python3.8"
+    --      elseif vim.fn.executable("/opt/venv/bin/python3.9") == 1 then
+    --        return "/opt/venv/bin/python3.9"
+    --      elseif vim.fn.executable("/opt/venv/bin/python3.10") == 1 then
+    --        return "/opt/venv/bin/python3.10"
+    --      else
+    --        return "/usr/bin/python3"
+    --      end
     --end,
 
   },
@@ -409,15 +409,15 @@ dap.configurations.python = {
     name = "pytest: docker container - current file",
     console = "integratedTerminal",
     module = "pytest",
-    pathMappings = {{
+    pathMappings = { {
       localRoot = vim.fn.getcwd(),
       remoteRoot = "/workspaces/scraping"
-    }},
+    } },
     --pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
     args = {
-    --"-m",
-    --"debugpy.adapter",
-    "${file}"
+      --"-m",
+      --"debugpy.adapter",
+      "${file}"
     },
     subProcess = false,
   },
@@ -427,10 +427,10 @@ dap.configurations.python = {
     name = "pytest: docker container",
     console = "integratedTerminal",
     module = "pytest",
-    pathMappings = {{
+    pathMappings = { {
       localRoot = vim.fn.getcwd(),
       remoteRoot = "/workspaces/scraping"
-    }},
+    } },
     --pythonPath = os.getenv("VIRTUAL_ENV") .. "/bin/python3",
     subProcess = false,
   }
@@ -567,7 +567,8 @@ dap.configurations.rust = {
     name = "Launch syntect_server",
     type = "lldb",
     request = "launch",
-    program = "~/sourcegraph/sourcegraph.git/scip-syntax-documents/docker-images/syntax-highlighter/target/debug/syntect_server",
+    program =
+    "~/sourcegraph/sourcegraph.git/scip-syntax-documents/docker-images/syntax-highlighter/target/debug/syntect_server",
     args = {},
     cwd = "~/sourcegraph/sourcegraph.git/scip-syntax-documents/docker-images/syntax-highlighter/",
     stopOnEntry = false,
@@ -579,7 +580,8 @@ dap.configurations.rust = {
 
 dap.adapters.ocaml = {
   type = "executable",
-  command = "/home/david-engelmann/.opam/default/bin/ocamlearlybird",
+  --command = "/home/david-engelmann/.opam/default/bin/ocamlearlybird",
+  command = "ocamlearlybird",
   args = { "debug" },
 }
 
@@ -588,7 +590,19 @@ dap.configurations.ocaml = {
     name = "ocaml: earlybird",
     type = "ocaml",
     request = "launch",
-    --console = "integratedTerminal",
+    console = "integratedTerminal",
+    cwd = "${workspaceFolder}",
+
+    preLaunchTask = {
+      label = "dune build --profile debug @all",
+      type = "shell",
+      command = "dune build --profile debug @all"
+    },
+    stopOnEntry = true,
+    yieldSteps = 4096,
+    --program = "_build/default/${relativeFileDirname}/${fileBasenameNoExtension}.exe",
+    program = "_build/default/${relativeFileDirname}/${fileBasenameNoExtension}.bc",
+    onlyDebugGlob = "<${workspaceFolder}/**/*>"
   }
 }
 
