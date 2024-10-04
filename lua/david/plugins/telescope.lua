@@ -12,6 +12,9 @@ return {
     branch = '0.1.x',
     dependencies = {
       'nvim-lua/plenary.nvim',
+      'nvim-telescope/telescope-smart-history.nvim',
+      'nvim-telescope/telescope-ui-select.nvim',
+      'kkharji/sqlite.lua',
       { -- If encountering errors, see telescope-fzf-native README for installation instructions
         'nvim-telescope/telescope-fzf-native.nvim',
 
