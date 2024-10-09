@@ -1,22 +1,46 @@
 return {
   {
-    'mfussenegger/nvim-dap',
+    'rcarriga/nvim-dap-ui',
     dependencies = {
       'leoluz/nvim-dap-go',
-      'rcarriga/nvim-dap-ui',
+      'mfussenegger/nvim-dap',
+      "nvim-telescope/telescope-dap.nvim",
+      "jbyuki/one-small-step-for-vimkind",
+      'rcarriga/cmp-dap',
       'theHamsta/nvim-dap-virtual-text',
       'nvim-neotest/nvim-nio',
       'williamboman/mason.nvim',
+      'mfussenegger/nvim-dap-python',
     },
     config = function()
       local dap = require 'dap'
+      local dap_python = require 'dap-python'
       local ui = require 'dapui'
+
+      dap.set_log_level('TRACE')
 
       require('dapui').setup()
       require('dap-go').setup()
+      require('dap-python').setup(vim.g.python3_host_prog)
+      require('dap-python').test_runner = 'pytest'
 
       require('nvim-dap-virtual-text').setup {
         -- This just tries to mitigate the chance that I leak tokens here. Probably won't stop it from happening...
+        enabled = true,
+
+        enabled_commands = false,
+
+        highlight_changed_variables = true,
+        highlight_new_as_changed = true,
+
+        commented = false,
+
+        show_stop_reason = true,
+
+        virt_text_pos = 'eol',
+
+        all_frames = false,
+
         display_callback = function(variable)
           local name = string.lower(variable.name)
           local value = string.lower(variable.value)
@@ -32,6 +56,123 @@ return {
         end,
       }
 
+      local pythonAttachConfig = {
+        type = 'python',
+        request = 'attach',
+        connect = {
+          port = 5678,
+          host = 'localhost',
+        },
+        mode = "remote",
+        name = "Attach to Docker - Python",
+        cwd = vim.fn.getcwd(),
+        pathMappings = {
+          {
+            localRoot = vim.fn.getcwd(),
+            remoteRoot = function()
+              return '/code'
+            end,
+          }
+        }
+      }
+      table.insert(require('dap').configurations.python, pythonAttachConfig)
+
+
+
+      --dap_python.setup("python")
+      --dap_python.test_runner = "pytest"
+
+      --dap.adapters.python = {
+        --type = "executable",
+        --command = "/usr/local/bin/python",
+        --args = { "-m", "debugpy.adapter" },
+      --}
+
+      --dap.adapters.python = {
+        --type = 'server',
+        --host = '0.0.0.0',
+        --port = 5678,
+      --}
+
+      --dap.configurations.python = {
+        --{
+          --type = 'python',
+          --request = 'launch',
+          --name = 'pytest: current file',
+          --args = {
+            --"${file}"
+          --},
+          --console = "integratedTerminal",
+          --module = "pytest",
+          --pythonPath = "/usr/local/bin/python", 
+        --},
+        --{
+          --type = 'python',
+          --request = 'launch',
+          --name = 'pytest',
+          --console = "integratedTerminal",
+          --module = "pytest",
+          --pythonPath = "/usr/local/bin/python",
+        --},
+        --{
+          --type = 'python',
+          --request = 'attach',
+          --name = 'pytest: docker container - current file',
+          --console = "integratedTerminal",
+          --module = "pytest",
+          --pathMappings = {{
+            --localRoot = vim.fn.getcwd(),
+            --remoteRoot = "/code"
+          --}},
+          --args = {
+            --"${file}"
+          --},
+          --subProcess = false,
+
+        --},
+        --{
+          --type = 'python',
+          --request = 'attach',
+          --name = 'pytest: docker container',
+          --console = "integratedTerminal",
+          --module = "pytest",
+          --pathMappings = {{
+            --localRoot = vim.fn.getcwd(),
+            --remoteRoot = "/code"
+          --}},
+
+          --subProcess = false,
+        --},
+      --}
+
+      --dap_python.setup {
+        --adapter = 'python',
+        --configurations = {
+          --{
+            --type = 'python',
+            --request = 'attach',
+            --name = 'Attach to Docker',
+            --host = 'localhost',
+            --port = 5678,
+            --justMyCode = false,
+          --}
+        --}
+      --}
+
+
+      --dap.configurations.python = {
+        --{
+          --type = 'python',
+          --request = 'launch',
+          --name = 'launch file',
+          --program = "${file}",
+          --pythonPath = function()
+            --return '/usr/local/bin/python'
+          --end;
+        --}
+      --}
+
+
       -- Handled by nvim-dap-go
       -- dap.adapters.go = {
       --   type = "server",
@@ -41,26 +182,6 @@ return {
       --     args = { "dap", "-l", "127.0.0.1:${port}" },
       --   },
       -- }
-
-      local elixir_ls_debugger = vim.fn.exepath 'elixir-ls-debugger'
-      if elixir_ls_debugger ~= '' then
-        dap.adapters.mix_task = {
-          type = 'executable',
-          command = elixir_ls_debugger,
-        }
-
-        dap.configurations.elixir = {
-          {
-            type = 'mix_task',
-            name = 'phoenix server',
-            task = 'phx.server',
-            request = 'launch',
-            projectDir = '${workspaceFolder}',
-            exitAfterTaskReturns = false,
-            debugAutoInterpretAllModules = false,
-          },
-        }
-      end
 
       vim.keymap.set('n', '<space>b', dap.toggle_breakpoint)
       vim.keymap.set('n', '<space>gb', dap.run_to_cursor)
