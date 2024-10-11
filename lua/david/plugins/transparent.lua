@@ -26,7 +26,7 @@ return {
         'CursorLineNr',
         'EndOfBuffer',
       },
-      extra_groups = { 'NormalFloat', 'NvimTreeNormal', 'TelescopeNormal' }, -- table: additional groups that should be cleared
+      extra_groups = { 'NormalFloat', 'NvimTreeNormal', 'TelescopeNormal', "NeoTreeNormal", "NeoTreeNormalNC" }, -- table: additional groups that should be cleared
       exclude_groups = { 'NotifyBackground' }, -- table: groups you don't want to clear
     }
   end,
