@@ -7,7 +7,7 @@
 vim.opt.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.opt.relativenumber = true
+vim.opt.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.opt.mouse = 'a'
@@ -59,4 +59,35 @@ vim.opt.cursorline = true
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.opt.scrolloff = 10
 
+vim.opt.inccommand = "split"
+
+-- Best search settings :)
+vim.opt.smartcase = true
+vim.opt.ignorecase = true
+
+----- Personal Preferences -----
+vim.opt.number = true
+vim.opt.relativenumber = true
+
+vim.opt.splitbelow = true
+vim.opt.splitright = true
+
+vim.opt.signcolumn = "yes"
+vim.opt.shada = { "'10", "<0", "s10", "h" }
+
+vim.opt.swapfile = false
 -- vim: ts=2 sts=2 sw=2 et
+vim.opt.wrap = true
+vim.opt.linebreak = true
+
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+
+vim.opt.more = false
+
+vim.opt.foldmethod = "manual"
+
+vim.opt.title = true
+vim.opt.titlestring = '%t%( %M%)%( (%{expand("%:~:h")})%)%a (nvim)'
+
+vim.opt.undofile = true

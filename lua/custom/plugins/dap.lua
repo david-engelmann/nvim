@@ -71,6 +71,11 @@ return {
         host = 'localhost',
         port = 5678,
       }
+      dap.adapters.pytest = {
+        type = 'server',
+        host = 'localhost',
+        port = 5679,
+      }
 
 --      dap.adapters.python = function(cb, config)
         --if config.request == 'attach' then
@@ -153,21 +158,43 @@ return {
           port = 5678,
           host = 'localhost',
         },
-        module = 'pytest',
+        --module = 'pytest',
 
-        name = "Attach to Docker - Pytest:all", 
+        console = 'integratedTerminal',
+        name = 'Attach to Docker - FastApi:main', 
 
         pathMappings = {
           {
-            localRoot = vim.fn.getcwd(),
+            localRoot = '/Users/david/bg/bgv3',
             remoteRoot = '/code'
           }
         },
         subProcess = false,
       }
+
+      local pythonAttachPytestConfig = {
+        type = 'pytest',
+        request = 'attach',
+        connect = {
+          port = 5679,
+          host = 'localhost',
+        },
+        --module = 'pytest',
+        name = 'Attach to Docker Pytest:all',
+        console = 'integratedTerminal',
+
+        pathMappings = {
+          {
+            localRoot = '/Users/david/bg/bgv3',
+            remoteRoot = '/code',
+          }
+        },
+        subProcess = false,
+        args = { '-m', 'debugpy.adapter' },
+      }
       --table.insert(require('dap').configurations.python, pythonAttachConfig)
 
-      dap.configurations.python = {pythonLocalFileConfig, pythonLocalConfig, pythonLocalFolderConfig, pythonAttachFileConfig, pythonAttachConfig}
+      dap.configurations.python = {pythonLocalFileConfig, pythonLocalConfig, pythonLocalFolderConfig, pythonAttachFileConfig, pythonAttachConfig, pythonAttachPytestConfig}
 
       -- taken from above
         --mode = "remote",
@@ -329,6 +356,88 @@ return {
         "<Cmd>lua require('dap').run({type='python', request='attach', name='Attach to Docker - Python', connect={host='localhost', port=5678}, pathMappings={{localRoot='/Users/david/bg/bgv3', remoteRoot='/code'}}, args={'-m', 'pytest'}})<CR>",
         { noremap = true, silent = true }
       )
+
+      -- python -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+      local function run_pytest_docker(cmd)
+        -- open terminal running pytest under debugpy
+        vim.cmd("botright 15split new")
+        vim.cmd("terminal docker exec -it bgv3_app python -m debugpy --wait-for-client --listen 0.0.0.0:5679 -m " .. cmd .. " --color=yes")
+        vim.cmd("normal! G")
+
+        -- now ATTACH dap automatically
+        local dap = require('dap')
+        dap.run({
+          type = 'pytest',
+          request = 'attach',
+          name = 'Attach to Docker Pytest: auto',
+          connect = { host = 'localhost', port = 5679 },
+          pathMappings = {
+            { localRoot = '/Users/david/bg/bgv3', remoteRoot = '/code' }
+          },
+          subProcess = false,
+        })
+      end
+
+
+      local function convert_to_container_path(path)
+        return path:gsub("^/Users/david/bg/bgv3/", "/code/")
+      end
+      
+      -- Command to run the entire pytest suite
+      vim.api.nvim_create_user_command("PytestSuite", function()
+        run_pytest_docker("pytest /code/test")
+      end, {})
+      
+      -- Command to run pytest on the current file
+      vim.api.nvim_create_user_command("PytestFile", function()
+        local file = convert_to_container_path(vim.fn.expand("%:p"))
+        run_pytest_docker("pytest " .. file)
+      end, {})
+      
+      -- Command to run pytest on the current folder
+      vim.api.nvim_create_user_command("PytestFolder", function()
+        local folder = convert_to_container_path(vim.fn.expand("%:p:h"))
+        run_pytest_docker("pytest " .. folder)
+      end, {})
+
+
+      local function get_current_function_name()
+        local ts_utils = require('nvim-treesitter.ts_utils')
+        local node = ts_utils.get_node_at_cursor()
+      
+        while node do
+          if node:type() == 'function_definition' then
+            -- Get the first child with 'identifier' type for the function name
+            for i = 0, node:named_child_count() - 1 do
+              local child = node:named_child(i)
+              if child:type() == 'identifier' then
+                return vim.treesitter.get_node_text(child, 0)  -- Use this instead to get text directly
+              end
+            end
+          end
+          node = node:parent()
+        end
+      
+        return nil
+      end
+
+      -- Command to run pytest on the current function
+      vim.api.nvim_create_user_command("PytestFunction", function()
+        local file = convert_to_container_path(vim.fn.expand("%:p"))
+        local function_name = get_current_function_name()
+
+        if function_name then
+          run_pytest_docker("pytest " .. file .. "::" .. function_name)
+        else
+          print("No function name found at cursor position.")
+        end
+      end, {})
+
+      vim.api.nvim_set_keymap("n", "<leader>ts", ":PytestSuite<CR>", { noremap = true, silent = true, desc = "Run entire pytest suite" })
+      vim.api.nvim_set_keymap("n", "<leader>tf", ":PytestFile<CR>", { noremap = true, silent = true, desc = "Run pytest on current file" })
+      vim.api.nvim_set_keymap("n", "<leader>td", ":PytestFolder<CR>", { noremap = true, silent = true, desc = "Run pytest on current folder" })
+      vim.api.nvim_set_keymap("n", "<leader>tt", ":PytestFunction<CR>", { noremap = true, silent = true, desc = "Run pytest on current function" })
 
       dap.listeners.after.event_intialized.dapui_config = function()
         ui.open()
