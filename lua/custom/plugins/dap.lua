@@ -359,24 +359,68 @@ return {
 
       -- python -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
+      -- Helper: check if port is open using nc (netcat)
+      local function is_port_open(port)
+        local result = vim.fn.system("nc -z localhost " .. port .. " 2>/dev/null && echo 'open' || echo 'closed'")
+        return result:match("open") ~= nil
+      end
+
+      -- Helper: wait for port with polling using defer_fn
+      local function wait_for_port_and_attach(port, attempts_left, callback)
+        if attempts_left <= 0 then
+          vim.notify("Timeout waiting for debugpy on port " .. port, vim.log.levels.ERROR)
+          return
+        end
+
+        if is_port_open(port) then
+          -- Port is open, but debugpy needs more time to fully initialize
+          -- Wait 2 seconds before attaching to avoid ECONNRESET
+          vim.notify("Port open, waiting for debugpy to initialize...", vim.log.levels.INFO)
+          vim.defer_fn(callback, 2000)
+        else
+          -- Try again in 300ms
+          vim.defer_fn(function()
+            wait_for_port_and_attach(port, attempts_left - 1, callback)
+          end, 300)
+        end
+      end
+
+      -- Helper: kill any existing debugpy listener on the port (synchronous)
+      local function kill_existing_debugpy()
+        -- Kill any existing debugpy process in the container to free up port 5679
+        vim.fn.system("docker exec bgv3_app pkill -f 'debugpy.*5679' 2>/dev/null || true")
+        -- Wait a bit for the process to fully terminate and port to be released
+        vim.fn.system("sleep 1")
+      end
+
       local function run_pytest_docker(cmd)
-        -- open terminal running pytest under debugpy
+        -- Kill any existing debugpy process first to avoid "Address already in use"
+        vim.notify("Cleaning up old debugpy processes...", vim.log.levels.INFO)
+        kill_existing_debugpy()
+
+        -- Open terminal running pytest under debugpy
         vim.cmd("botright 15split new")
         vim.cmd("terminal docker exec -it bgv3_app python -m debugpy --wait-for-client --listen 0.0.0.0:5679 -m " .. cmd .. " --color=yes")
         vim.cmd("normal! G")
+        -- Return focus to code window
+        vim.cmd("wincmd p")
 
-        -- now ATTACH dap automatically
-        local dap = require('dap')
-        dap.run({
-          type = 'pytest',
-          request = 'attach',
-          name = 'Attach to Docker Pytest: auto',
-          connect = { host = 'localhost', port = 5679 },
-          pathMappings = {
-            { localRoot = '/Users/david/bg/bgv3', remoteRoot = '/code' }
-          },
-          subProcess = false,
-        })
+        -- Wait for debugpy to be ready (up to ~18 seconds: 60 attempts * 300ms)
+        vim.notify("Waiting for debugpy to start...", vim.log.levels.INFO)
+        wait_for_port_and_attach(5679, 60, function()
+          vim.notify("Attaching debugger...", vim.log.levels.INFO)
+          local dap = require('dap')
+          dap.run({
+            type = 'pytest',
+            request = 'attach',
+            name = 'Attach to Docker Pytest: auto',
+            connect = { host = 'localhost', port = 5679 },
+            pathMappings = {
+              { localRoot = '/Users/david/bg/bgv3', remoteRoot = '/code' }
+            },
+            subProcess = false,
+          })
+        end)
       end
 
 
