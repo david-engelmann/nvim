@@ -4,316 +4,340 @@ return {
     dependencies = {
       'leoluz/nvim-dap-go',
       'mfussenegger/nvim-dap',
-      "nvim-telescope/telescope-dap.nvim",
-      "jbyuki/one-small-step-for-vimkind",
+      'nvim-telescope/telescope-dap.nvim',
+      'jbyuki/one-small-step-for-vimkind',
       'rcarriga/cmp-dap',
       'theHamsta/nvim-dap-virtual-text',
       'nvim-neotest/nvim-nio',
       'williamboman/mason.nvim',
-      "jay-babu/mason-nvim-dap.nvim",
+      'jay-babu/mason-nvim-dap.nvim',
       'mfussenegger/nvim-dap-python',
     },
     config = function()
       local dap = require 'dap'
-      local dap_python = require 'dap-python'
       local ui = require 'dapui'
 
-      dap.set_log_level('TRACE')
-
+      dap.set_log_level 'TRACE'
       require('dapui').setup()
       require('dap-go').setup()
-      --require('dap-python').setup("python")
-      --require('dap-python').test_runner = 'pytest'
-      --require('dap-python').resolve_python = function()
-        --return '/usr/local/bin/python'
-      --end
 
       require('nvim-dap-virtual-text').setup {
-        -- This just tries to mitigate the chance that I leak tokens here. Probably won't stop it from happening...
         enabled = true,
-
         enabled_commands = false,
-
         highlight_changed_variables = true,
         highlight_new_as_changed = true,
-
         commented = false,
-
         show_stop_reason = true,
-
         virt_text_pos = 'eol',
-
         all_frames = false,
-
         display_callback = function(variable)
-          local name = string.lower(variable.name)
-          local value = string.lower(variable.value)
+          local name = string.lower(variable.name or '')
+          local value = string.lower(variable.value or '')
           if name:match 'secret' or name:match 'api' or value:match 'secret' or value:match 'api' then
-            return '*****'
+            return ' *****'
           end
-
-          if #variable.value > 15 then
+          if variable.value and #variable.value > 15 then
             return ' ' .. string.sub(variable.value, 1, 15) .. '... '
           end
-
-          return ' ' .. variable.value
+          return ' ' .. (variable.value or '')
         end,
       }
-      
+
+      local python_bin = vim.fn.exepath 'python3'
+      if python_bin == '' then
+        python_bin = '/usr/local/bin/python'
+      end
+
+      local profiles = {
+        bgv3 = {
+          label = 'bgv3',
+          kind = 'docker',
+          container = 'bgv3_app',
+          remote_root = '/code',
+          test_root = '/code/test',
+          host_app_port = 5678,
+          host_pytest_port = 5679,
+          container_pytest_port = 5679,
+          markers = { 'app/main.py' },
+        },
+        staging_refresh = {
+          label = 'staging-refresh',
+          kind = 'compose',
+          service = 'staging-refresh',
+          remote_root = '/app',
+          test_root = '/app/tests',
+          host_app_port = tonumber(vim.env.STAGING_REFRESH_DEBUGPY_APP_PORT) or 5688,
+          host_pytest_port = tonumber(vim.env.STAGING_REFRESH_DEBUGPY_PYTEST_PORT) or 5689,
+          container_pytest_port = 5679,
+          markers = { 'code/refresh.py', 'tests/test_refresh_end_to_end.py' },
+        },
+      }
+
+      local forced_profile = nil
+
+      local function path_exists(path)
+        return vim.fn.filereadable(path) == 1 or vim.fn.isdirectory(path) == 1
+      end
+
+      local function find_repo_root()
+        local file = vim.api.nvim_buf_get_name(0)
+        local start = (file ~= '' and vim.fs.dirname(file)) or vim.loop.cwd()
+        local git_dir = vim.fs.find('.git', { path = start, upward = true })[1]
+        if git_dir then
+          return vim.fs.dirname(git_dir)
+        end
+        return vim.loop.cwd()
+      end
+
+      local function detect_profile(root)
+        if path_exists(root .. '/code/refresh.py') and path_exists(root .. '/tests/test_refresh_end_to_end.py') then
+          return 'staging_refresh'
+        end
+        return 'bgv3'
+      end
+
+      local function current_profile()
+        local root = find_repo_root()
+        local key = forced_profile
+        if not key or not profiles[key] then
+          key = detect_profile(root)
+        end
+        return profiles[key], root, key
+      end
+
+      local function system_exec(profile, root, inner_cmd)
+        local inner = vim.fn.shellescape(inner_cmd)
+        if profile.kind == 'compose' then
+          return 'cd ' .. vim.fn.shellescape(root) .. ' && docker compose exec -T ' .. profile.service .. ' sh -lc ' .. inner
+        end
+        return 'docker exec ' .. profile.container .. ' sh -lc ' .. inner
+      end
+
+      local function terminal_exec(profile, root, inner_cmd)
+        local inner = vim.fn.shellescape(inner_cmd)
+        if profile.kind == 'compose' then
+          return 'cd ' .. vim.fn.shellescape(root) .. ' && docker compose exec ' .. profile.service .. ' sh -lc ' .. inner
+        end
+        return 'docker exec -it ' .. profile.container .. ' sh -lc ' .. inner
+      end
+
+      local function convert_to_container_path(path)
+        local profile, root = current_profile()
+        if path:sub(1, #root) == root then
+          return profile.remote_root .. path:sub(#root + 1)
+        end
+        return path
+      end
+
       dap.adapters.python = {
         type = 'executable',
-        command = '/usr/local/bin/python',
+        command = python_bin,
         args = { '-m', 'debugpy.adapter' },
       }
 
-      dap.adapters.python3 = {
-        type = 'server',
-        host = 'localhost',
-        port = 5678,
-      }
-      dap.adapters.pytest = {
-        type = 'server',
-        host = 'localhost',
-        port = 5679,
-      }
+      dap.adapters.python3 = function(cb, _)
+        local profile = current_profile()
+        cb({
+          type = 'server',
+          host = '127.0.0.1',
+          port = profile.host_app_port,
+        })
+      end
 
---      dap.adapters.python = function(cb, config)
-        --if config.request == 'attach' then
-            --local port = (config.connect or config).port
-            --cb({
-                --type = 'server',
-                --port = 5678,
-                --host = '0.0.0.0',
-            --})
-        --else
-            --cb({
-                --type = 'executable',
-                --command = '/usr/local/bin/python',
-                --args = { '-m', 'debugpy.adapter' },
-            --})
-        --end
-      --end
+      dap.adapters.pytest = function(cb, _)
+        local profile = current_profile()
+        cb({
+          type = 'server',
+          host = '127.0.0.1',
+          port = profile.host_pytest_port,
+        })
+      end
 
-
-      local pythonLocalFileConfig = {
+      local python_local_file = {
         type = 'python',
         request = 'launch',
         name = 'pytest: current file',
-        args = {
-          "${file}"
-        },
-        console = "integratedTerminal",
-        module = "pytest",
-        pythonPath = "/usr/local/bin/python",
+        args = { '${file}' },
+        console = 'integratedTerminal',
+        module = 'pytest',
+        pythonPath = python_bin,
       }
 
-      local pythonLocalConfig = {
+      local python_local_all = {
         type = 'python',
         request = 'launch',
         name = 'pytest',
-        console = "integratedTerminal",
-        module = "pytest",
-        pythonPath = "/usr/local/bin/python",
+        console = 'integratedTerminal',
+        module = 'pytest',
+        pythonPath = python_bin,
       }
 
-      local pythonLocalFolderConfig = {
+      local python_local_folder = {
         type = 'python',
         request = 'launch',
         name = 'pytest: current folder',
-        args = {
-          vim.fn.getcwd()
-        },
-        console = "integratedTerminal",
-        module = "pytest",
-        pythonPath = "/usr/local/bin/python",
-      }
-
-      local pythonAttachFileConfig = {
-        type = 'python3',
-        request = 'attach',
-        connect = {
-          port = 5678,
-          host = 'localhost',
-        },
-        name = 'pytest: docker container - current file',
+        args = { vim.fn.getcwd() },
         console = 'integratedTerminal',
         module = 'pytest',
-        pathMappings = {
-          {
-            localRoot = vim.fn.getcwd(),
-            remoteRoot = '/code'
-          }
-        },
-        args = {
-          "${file}"
-        },
-        subProcess = false,
+        pythonPath = python_bin,
       }
 
+      dap.configurations.python = { python_local_file, python_local_all, python_local_folder }
 
-      local pythonAttachConfig = {
-        type = 'python3',
-        request = 'attach',
-        connect = {
-          port = 5678,
-          host = 'localhost',
-        },
-        --module = 'pytest',
+      local function is_port_open(port)
+        local result = vim.fn.system("nc -z localhost " .. port .. " 2>/dev/null && echo 'open' || echo 'closed'")
+        return result:match 'open' ~= nil
+      end
 
-        console = 'integratedTerminal',
-        name = 'Attach to Docker - FastApi:main', 
+      local function wait_for_port_and_attach(port, attempts_left, callback)
+        if attempts_left <= 0 then
+          vim.notify('Timeout waiting for debugpy on port ' .. port, vim.log.levels.ERROR)
+          return
+        end
+        if is_port_open(port) then
+          vim.defer_fn(callback, 1000)
+        else
+          vim.defer_fn(function()
+            wait_for_port_and_attach(port, attempts_left - 1, callback)
+          end, 300)
+        end
+      end
 
-        pathMappings = {
-          {
-            localRoot = '/Users/david/bg/bgv3',
-            remoteRoot = '/code'
-          }
-        },
-        subProcess = false,
-      }
+      local function attach_pytest()
+        local profile, root = current_profile()
+        dap.run {
+          type = 'pytest',
+          request = 'attach',
+          name = 'Attach to Docker Pytest: auto (' .. profile.label .. ')',
+          connect = { host = '127.0.0.1', port = profile.host_pytest_port },
+          pathMappings = {
+            { localRoot = root, remoteRoot = profile.remote_root },
+          },
+          subProcess = false,
+          justMyCode = false,
+        }
+      end
 
-      local pythonAttachPytestConfig = {
-        type = 'pytest',
-        request = 'attach',
-        connect = {
-          port = 5679,
-          host = 'localhost',
-        },
-        --module = 'pytest',
-        name = 'Attach to Docker Pytest:all',
-        console = 'integratedTerminal',
+      local function kill_existing_debugpy()
+        local profile, root = current_profile()
+        local kill_cmd = "pkill -f 'debugpy.*" .. profile.container_pytest_port .. "' || true"
+        vim.fn.system(system_exec(profile, root, kill_cmd))
+        vim.fn.system 'sleep 1'
+      end
 
-        pathMappings = {
-          {
-            localRoot = '/Users/david/bg/bgv3',
-            remoteRoot = '/code',
-          }
-        },
-        subProcess = false,
-        args = { '-m', 'debugpy.adapter' },
-      }
-      --table.insert(require('dap').configurations.python, pythonAttachConfig)
+      local function run_pytest_docker(cmd)
+        local profile, root = current_profile()
+        vim.notify('Cleaning up old debugpy processes...', vim.log.levels.INFO)
+        kill_existing_debugpy()
 
-      dap.configurations.python = {pythonLocalFileConfig, pythonLocalConfig, pythonLocalFolderConfig, pythonAttachFileConfig, pythonAttachConfig, pythonAttachPytestConfig}
+        vim.cmd 'botright 15split new'
+        local debug_cmd = 'python -m debugpy --wait-for-client --listen 0.0.0.0:'
+          .. profile.container_pytest_port
+          .. ' -m '
+          .. cmd
+          .. ' --color=yes'
+        vim.cmd('terminal ' .. terminal_exec(profile, root, debug_cmd))
+        vim.cmd 'normal! G'
+        vim.cmd 'wincmd p'
 
-      -- taken from above
-        --mode = "remote",
-        --module = "pytest",
-        --args = {
-          --"${file}"
-        --},
-        --pythonPath = "/usr/local/bin/python",
-        --cwd = vim.fn.getcwd(),
-        --subProcess = false,
+        vim.notify(
+          'Waiting for debugpy (' .. profile.label .. ') on localhost:' .. profile.host_pytest_port .. '...',
+          vim.log.levels.INFO
+        )
 
-      --dap_python.setup("python")
-      --dap_python.test_runner = "pytest"
+        wait_for_port_and_attach(profile.host_pytest_port, 60, function()
+          vim.notify('Attaching debugger...', vim.log.levels.INFO)
+          attach_pytest()
+        end)
+      end
 
-      --dap.adapters.python = {
-        --type = "executable",
-        --command = "/usr/local/bin/python",
-        --args = { "-m", "debugpy.adapter" },
-      --}
+      local function get_current_function_name()
+        local ok, ts_utils = pcall(require, 'nvim-treesitter.ts_utils')
+        if not ok then
+          return nil
+        end
 
-      --dap.adapters.python = {
-        --type = 'server',
-        --host = '0.0.0.0',
-        --port = 5678,
-      --}
+        local node = ts_utils.get_node_at_cursor()
+        while node do
+          if node:type() == 'function_definition' then
+            for i = 0, node:named_child_count() - 1 do
+              local child = node:named_child(i)
+              if child:type() == 'identifier' then
+                return vim.treesitter.get_node_text(child, 0)
+              end
+            end
+          end
+          node = node:parent()
+        end
+        return nil
+      end
 
-      --dap.configurations.python = {
-        --{
-          --type = 'python',
-          --request = 'launch',
-          --name = 'pytest: current file',
-          --args = {
-            --"${file}"
-          --},
-          --console = "integratedTerminal",
-          --module = "pytest",
-          --pythonPath = "/usr/local/bin/python", 
-        --},
-        --{
-          --type = 'python',
-          --request = 'launch',
-          --name = 'pytest',
-          --console = "integratedTerminal",
-          --module = "pytest",
-          --pythonPath = "/usr/local/bin/python",
-        --},
-        --{
-          --type = 'python',
-          --request = 'attach',
-          --name = 'pytest: docker container - current file',
-          --console = "integratedTerminal",
-          --module = "pytest",
-          --pathMappings = {{
-            --localRoot = vim.fn.getcwd(),
-            --remoteRoot = "/code"
-          --}},
-          --args = {
-            --"${file}"
-          --},
-          --subProcess = false,
+      local function register_user_command(name, fn)
+        pcall(vim.api.nvim_del_user_command, name)
+        vim.api.nvim_create_user_command(name, fn, {})
+      end
 
-        --},
-        --{
-          --type = 'python',
-          --request = 'attach',
-          --name = 'pytest: docker container',
-          --console = "integratedTerminal",
-          --module = "pytest",
-          --pathMappings = {{
-            --localRoot = vim.fn.getcwd(),
-            --remoteRoot = "/code"
-          --}},
+      register_user_command('DapProfile', function(opts)
+        local arg = (opts.args or ''):gsub('^%s+', ''):gsub('%s+$', '')
+        if arg == '' then
+          vim.ui.select({ 'auto', 'bgv3', 'staging_refresh' }, { prompt = 'Select DAP profile' }, function(choice)
+            if not choice then
+              return
+            end
+            if choice == 'auto' then
+              forced_profile = nil
+            else
+              forced_profile = choice
+            end
+            local _, _, key = current_profile()
+            vim.notify('DAP profile: ' .. key, vim.log.levels.INFO)
+          end)
+          return
+        end
 
-          --subProcess = false,
-        --},
-      --}
+        if arg == 'auto' then
+          forced_profile = nil
+          local _, _, key = current_profile()
+          vim.notify('DAP profile: ' .. key, vim.log.levels.INFO)
+          return
+        end
 
-      --dap_python.setup {
-        --adapter = 'python',
-        --configurations = {
-          --{
-            --type = 'python',
-            --request = 'attach',
-            --name = 'Attach to Docker',
-            --host = 'localhost',
-            --port = 5678,
-            --justMyCode = false,
-          --}
-        --}
-      --}
+        if profiles[arg] then
+          forced_profile = arg
+          vim.notify('DAP profile: ' .. arg, vim.log.levels.INFO)
+          return
+        end
 
+        vim.notify('Unknown profile: ' .. arg, vim.log.levels.ERROR)
+      end)
 
-      --dap.configurations.python = {
-        --{
-          --type = 'python',
-          --request = 'launch',
-          --name = 'launch file',
-          --program = "${file}",
-          --pythonPath = function()
-            --return '/usr/local/bin/python'
-          --end;
-        --}
-      --}
+      register_user_command('PytestSuite', function()
+        local profile = current_profile()
+        run_pytest_docker('pytest ' .. profile.test_root)
+      end)
 
+      register_user_command('PytestFile', function()
+        local file = convert_to_container_path(vim.fn.expand '%:p')
+        run_pytest_docker('pytest ' .. file)
+      end)
 
-      -- Handled by nvim-dap-go
-      -- dap.adapters.go = {
-      --   type = "server",
-      --   port = "${port}",
-      --   executable = {
-      --     command = "dlv",
-      --     args = { "dap", "-l", "127.0.0.1:${port}" },
-      --   },
-      -- }
+      register_user_command('PytestFolder', function()
+        local folder = convert_to_container_path(vim.fn.expand '%:p:h')
+        run_pytest_docker('pytest ' .. folder)
+      end)
+
+      register_user_command('PytestFunction', function()
+        local file = convert_to_container_path(vim.fn.expand '%:p')
+        local function_name = get_current_function_name()
+        if function_name then
+          run_pytest_docker('pytest ' .. file .. '::' .. function_name)
+        else
+          vim.notify('No function name found at cursor position.', vim.log.levels.WARN)
+        end
+      end)
 
       vim.keymap.set('n', '<space>b', dap.toggle_breakpoint)
       vim.keymap.set('n', '<space>gb', dap.run_to_cursor)
-
-      -- Eval var under cursor
       vim.keymap.set('n', '<space>?', function()
         require('dapui').eval(nil, { enter = true })
       end)
@@ -334,159 +358,15 @@ return {
         ui.eval(vim.fn.input 'Expression: ')
       end)
 
-      --vim.api.nvim_set_keymap("n", "<leader>dn", "<Cmd>lua require('dap-python').test_method()<CR>", {noremap = true, silent = true})
-      --vim.api.nvim_set_keymap("n", "<leader>df", "<Cmd>lua require('dap-python').test_class()<CR>", {noremap = true, silent = true})
-      --vim.api.nvim_set_keymap("v", "<leader>ds", "<Cmd>lua require('dap-python').debug_selection()<CR>", {noremap = true, silent = true})
+      vim.keymap.set('n', '<leader>ts', ':PytestSuite<CR>', { noremap = true, silent = true, desc = 'Run entire pytest suite' })
+      vim.keymap.set('n', '<leader>tf', ':PytestFile<CR>', { noremap = true, silent = true, desc = 'Run pytest on current file' })
+      vim.keymap.set('n', '<leader>td', ':PytestFolder<CR>', { noremap = true, silent = true, desc = 'Run pytest on current folder' })
+      vim.keymap.set('n', '<leader>tt', ':PytestFunction<CR>', { noremap = true, silent = true, desc = 'Run pytest on current function' })
+      vim.keymap.set('n', '<leader>tp', ':DapProfile<CR>', { noremap = true, silent = true, desc = 'Select DAP profile' })
 
-      vim.api.nvim_set_keymap(
-        'n',
-        '<leader>df',
-        "<Cmd>lua require('dap').run({type='python', request='attach', name='Attach to Docker - Python', connect={host='localhost', port=5678}, pathMappings={{localRoot='/Users/david/bg/bgv3', remoteRoot='/code'}}, args={'-m', 'pytest', '${file}'}})<CR>",
-        { noremap = true, silent = true }
-      )
-      vim.api.nvim_set_keymap(
-        'n',
-        '<leader>dd',
-        "<Cmd>lua require('dap').run({type='python', request='attach', name='Attach to Docker - Python', connect={host='localhost', port=5678}, pathMappings={{localRoot='/Users/david/bg/bgv3', remoteRoot='/code'}}, args={'-m', 'pytest', '${workspaceFolder}/'}})<CR>",
-        { noremap = true, silent = true }
-      )
-      vim.api.nvim_set_keymap(
-        'n',
-        '<leader>da',
-        "<Cmd>lua require('dap').run({type='python', request='attach', name='Attach to Docker - Python', connect={host='localhost', port=5678}, pathMappings={{localRoot='/Users/david/bg/bgv3', remoteRoot='/code'}}, args={'-m', 'pytest'}})<CR>",
-        { noremap = true, silent = true }
-      )
-
-      -- python -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
-
-      -- Helper: check if port is open using nc (netcat)
-      local function is_port_open(port)
-        local result = vim.fn.system("nc -z localhost " .. port .. " 2>/dev/null && echo 'open' || echo 'closed'")
-        return result:match("open") ~= nil
-      end
-
-      -- Helper: wait for port with polling using defer_fn
-      local function wait_for_port_and_attach(port, attempts_left, callback)
-        if attempts_left <= 0 then
-          vim.notify("Timeout waiting for debugpy on port " .. port, vim.log.levels.ERROR)
-          return
-        end
-
-        if is_port_open(port) then
-          -- Port is open, but debugpy needs more time to fully initialize
-          -- Wait 2 seconds before attaching to avoid ECONNRESET
-          vim.notify("Port open, waiting for debugpy to initialize...", vim.log.levels.INFO)
-          vim.defer_fn(callback, 2000)
-        else
-          -- Try again in 300ms
-          vim.defer_fn(function()
-            wait_for_port_and_attach(port, attempts_left - 1, callback)
-          end, 300)
-        end
-      end
-
-      -- Helper: kill any existing debugpy listener on the port (synchronous)
-      local function kill_existing_debugpy()
-        -- Kill any existing debugpy process in the container to free up port 5679
-        vim.fn.system("docker exec bgv3_app pkill -f 'debugpy.*5679' 2>/dev/null || true")
-        -- Wait a bit for the process to fully terminate and port to be released
-        vim.fn.system("sleep 1")
-      end
-
-      local function run_pytest_docker(cmd)
-        -- Kill any existing debugpy process first to avoid "Address already in use"
-        vim.notify("Cleaning up old debugpy processes...", vim.log.levels.INFO)
-        kill_existing_debugpy()
-
-        -- Open terminal running pytest under debugpy
-        vim.cmd("botright 15split new")
-        vim.cmd("terminal docker exec -it bgv3_app python -m debugpy --wait-for-client --listen 0.0.0.0:5679 -m " .. cmd .. " --color=yes")
-        vim.cmd("normal! G")
-        -- Return focus to code window
-        vim.cmd("wincmd p")
-
-        -- Wait for debugpy to be ready (up to ~18 seconds: 60 attempts * 300ms)
-        vim.notify("Waiting for debugpy to start...", vim.log.levels.INFO)
-        wait_for_port_and_attach(5679, 60, function()
-          vim.notify("Attaching debugger...", vim.log.levels.INFO)
-          local dap = require('dap')
-          dap.run({
-            type = 'pytest',
-            request = 'attach',
-            name = 'Attach to Docker Pytest: auto',
-            connect = { host = 'localhost', port = 5679 },
-            pathMappings = {
-              { localRoot = '/Users/david/bg/bgv3', remoteRoot = '/code' }
-            },
-            subProcess = false,
-          })
-        end)
-      end
-
-
-      local function convert_to_container_path(path)
-        return path:gsub("^/Users/david/bg/bgv3/", "/code/")
-      end
-      
-      -- Command to run the entire pytest suite
-      vim.api.nvim_create_user_command("PytestSuite", function()
-        run_pytest_docker("pytest /code/test")
-      end, {})
-      
-      -- Command to run pytest on the current file
-      vim.api.nvim_create_user_command("PytestFile", function()
-        local file = convert_to_container_path(vim.fn.expand("%:p"))
-        run_pytest_docker("pytest " .. file)
-      end, {})
-      
-      -- Command to run pytest on the current folder
-      vim.api.nvim_create_user_command("PytestFolder", function()
-        local folder = convert_to_container_path(vim.fn.expand("%:p:h"))
-        run_pytest_docker("pytest " .. folder)
-      end, {})
-
-
-      local function get_current_function_name()
-        local ts_utils = require('nvim-treesitter.ts_utils')
-        local node = ts_utils.get_node_at_cursor()
-      
-        while node do
-          if node:type() == 'function_definition' then
-            -- Get the first child with 'identifier' type for the function name
-            for i = 0, node:named_child_count() - 1 do
-              local child = node:named_child(i)
-              if child:type() == 'identifier' then
-                return vim.treesitter.get_node_text(child, 0)  -- Use this instead to get text directly
-              end
-            end
-          end
-          node = node:parent()
-        end
-      
-        return nil
-      end
-
-      -- Command to run pytest on the current function
-      vim.api.nvim_create_user_command("PytestFunction", function()
-        local file = convert_to_container_path(vim.fn.expand("%:p"))
-        local function_name = get_current_function_name()
-
-        if function_name then
-          run_pytest_docker("pytest " .. file .. "::" .. function_name)
-        else
-          print("No function name found at cursor position.")
-        end
-      end, {})
-
-      vim.api.nvim_set_keymap("n", "<leader>ts", ":PytestSuite<CR>", { noremap = true, silent = true, desc = "Run entire pytest suite" })
-      vim.api.nvim_set_keymap("n", "<leader>tf", ":PytestFile<CR>", { noremap = true, silent = true, desc = "Run pytest on current file" })
-      vim.api.nvim_set_keymap("n", "<leader>td", ":PytestFolder<CR>", { noremap = true, silent = true, desc = "Run pytest on current folder" })
-      vim.api.nvim_set_keymap("n", "<leader>tt", ":PytestFunction<CR>", { noremap = true, silent = true, desc = "Run pytest on current function" })
-
-      dap.listeners.after.event_intialized.dapui_config = function()
+      dap.listeners.after.event_initialized.dapui_config = function()
         ui.open()
       end
-
       dap.listeners.before.attach.dapui_config = function()
         ui.open()
       end
